@@ -1,16 +1,97 @@
+require("dotenv").config();
 const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
+const {
+  getAssociatedTokenAddress,
+  getAccount,
+  getMint,
+} = require("@solana/spl-token");
 
-const TOKEN_ADDRESS = "GNH4UcmeGeRbi2p58WdQLoTkz5V18Rtna5kQVYdJZnDE";
-// const TOKEN_ADDRESS = "2yVbnztpQWDjwqcmSfs8cMgyoZSw67tZzFbSbwBytEhm";
+const { Program, AnchorProvider } = require("@coral-xyz/anchor");
+
+const TOKEN_ADDRESS = new PublicKey(
+  "GNH4UcmeGeRbi2p58WdQLoTkz5V18Rtna5kQVYdJZnDE"
+);
+const programId = new PublicKey("2yVbnztpQWDjwqcmSfs8cMgyoZSw67tZzFbSbwBytEhm");
 
 const connection = new Connection(clusterApiUrl("mainnet-beta"));
 
 require("./db");
-const { getPrice } = require("./util");
-const { TrxEventDetails } = require("./model");
+const { TrxEventDetails } = require("./db/collection");
+const IDL = require("./lib/bio_swap.json");
 
 const decimal = 1000000000; // 9 of 10
 
+const getQuote = async (sourceMint, destinationMint) => {
+  try {
+    const connection = new Connection(clusterApiUrl("mainnet-beta"));
+    const provider = new AnchorProvider(connection, {
+      publicKey: new PublicKey("FUg6vdQyauSKCWffzyj8H1k8snSao4TC3oKqUFoRDZQE"),
+    });
+    const program = new Program(IDL, programId, provider);
+
+    const mintA = new PublicKey(sourceMint);
+    const mintB = new PublicKey(destinationMint);
+    const swapPair = PublicKey.findProgramAddressSync(
+      [Buffer.from("swap-pair", "utf-8"), mintA.toBuffer(), mintB.toBuffer()],
+      programId
+    )[0];
+
+    const swapPairObject = await program.account.swapPair.fetch(swapPair);
+    const tokenAAccount = swapPairObject.tokenAAccount;
+    const tokenBAccount = swapPairObject.tokenBAccount;
+
+    const balanceA = await getAccount(connection, tokenAAccount);
+    const balanceB = await getAccount(connection, tokenBAccount);
+
+    const tokenMintA = await getMint(connection, mintA);
+    const tokenMintB = await getMint(connection, mintB);
+
+    console.log(tokenMintA.decimals, "Token A mint");
+    console.log(tokenMintB.decimals, "Token B mint");
+
+    const realBalanceA = String(balanceA.amount) / tokenMintA.decimals;
+    const realBalanceB = String(balanceB.amount) / tokenMintB.decimals;
+
+    console.log(realBalanceA, "Token A balance");
+    console.log(realBalanceB, "Token B balance");
+
+    console.log(realBalanceB / realBalanceA, "Calculated price");
+  } catch (e) {
+    console.log(e);
+  }
+};
+
+// Get Price in Pool after transaction is complete
+const getPricePool = async (mint, owner) => {
+  try {
+    console.log(mint, owner, "mint, owner");
+
+    // Get the address of pool wallet
+    // const [address] = PublicKey.findProgramAddressSync(
+    //     [new PublicKey(owner).toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), new PublicKey(mint).toBuffer()],
+    //     ASSOCIATED_TOKEN_PROGRAM_ID
+    // );
+    // console.log(address, 'address');
+
+    // Get the address of user wallet
+    const pubKey = await getAssociatedTokenAddress(
+      new PublicKey(mint),
+      new PublicKey(owner)
+    );
+    console.log(pubKey, "pubKey");
+
+    // Get the balance of user wallet
+    const { amount } = await getAccount(connection, pubKey);
+    console.log(amount, "amount");
+
+    return amount;
+  } catch (error) {
+    console.log(error);
+    return 0;
+  }
+};
+
+// Get the transaction details with signature
 async function fetchTransaction(tx) {
   try {
     const transaction = await connection.getTransaction(tx, {
@@ -82,12 +163,26 @@ async function fetchTransaction(tx) {
 
     await TrxEventDetails.create(saveData);
 
+    // This is for get price after transaction finalized in pool
+    const baseData = await getPricePool(
+      balanceData[0].mint,
+      balanceData[0].owner
+    );
+    // const quoteData = await getPricePool(quoteToken.mint, quoteToken.owner);
+
+    console.log(quoteData, baseData, "quoteData, baseData");
+
+    const newPrice = quoteData / baseData;
+
+    console.log(newPrice, "newPrice");
+
     console.log("Saving transaction data to database...");
   } catch (err) {
     console.error(err, "fetchTransaction Error");
   }
 }
 
+// Get the latest finalized transactions
 async function getRecentTransactions(routerAddress) {
   try {
     const routerPubkey = new PublicKey(routerAddress);
@@ -105,10 +200,10 @@ async function getRecentTransactions(routerAddress) {
   }
 }
 
+// Webhook function to get realtime transactions
 function subscribeToTransactions() {
-  const publicKey = new PublicKey(TOKEN_ADDRESS);
   connection.onLogs(
-    publicKey,
+    TOKEN_ADDRESS,
     (log) => {
       console.log("New transaction log:", log);
       fetchTransaction(log.signature);
@@ -119,19 +214,21 @@ function subscribeToTransactions() {
 
 async function main() {
   setTimeout(async () => {
+    // First time, I tested with this transaction
+    // await fetchTransaction(
+    //   "5YhEiWHARgyguJ9dSsdCUmQ4S6puuJS2UXGXQK2KQesjqPCwii7iffJBZLMjGfmrnWYfbNXb5dGDmfF7U1Mq99oy"
+    // );
     // At first time, we will have to test with recent transactions
     // getRecentTransactions(TOKEN_ADDRESS);
-
     // When deploy, will enable subscribeToTransactions function to get transaction realtime log
     // subscribeToTransactions();
-
-    
-    // First time, I tested with this transaction
-    await fetchTransaction('5YhEiWHARgyguJ9dSsdCUmQ4S6puuJS2UXGXQK2KQesjqPCwii7iffJBZLMjGfmrnWYfbNXb5dGDmfF7U1Mq99oy');
-
     // This is for get USDC price for each token
-    getPrice()
+    // getPrice()
   }, 3000);
 }
 
-main();
+getQuote(
+  "BLLbAtSHFpgkSaUGmSQnjafnhebt8XPncaeYrpEgWoVk",
+  "So11111111111111111111111111111111111111112"
+);
+// main();
