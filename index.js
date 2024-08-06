@@ -1,26 +1,21 @@
 require("dotenv").config();
 const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
-const {
-  getAssociatedTokenAddress,
-  getAccount,
-  getMint,
-} = require("@solana/spl-token");
-
+const { getAccount, getMint } = require("@solana/spl-token");
 const { Program, AnchorProvider } = require("@coral-xyz/anchor");
+
+const { TrxEventDetails } = require("./db/collection");
+const IDL = require("./lib/bio_swap.json");
+require("./db");
 
 const TOKEN_ADDRESS = new PublicKey(
   "GNH4UcmeGeRbi2p58WdQLoTkz5V18Rtna5kQVYdJZnDE"
 );
 const programId = new PublicKey("2yVbnztpQWDjwqcmSfs8cMgyoZSw67tZzFbSbwBytEhm");
-
 const connection = new Connection(clusterApiUrl("mainnet-beta"));
-
-require("./db");
-const { TrxEventDetails } = require("./db/collection");
-const IDL = require("./lib/bio_swap.json");
 
 const decimal = 1000000000; // 9 of 10
 
+// Get Price in Pool after transaction is complete
 const getQuote = async (sourceMint, destinationMint) => {
   try {
     const connection = new Connection(clusterApiUrl("mainnet-beta"));
@@ -58,36 +53,6 @@ const getQuote = async (sourceMint, destinationMint) => {
     console.log(realBalanceB / realBalanceA, "Calculated price");
   } catch (e) {
     console.log(e);
-  }
-};
-
-// Get Price in Pool after transaction is complete
-const getPricePool = async (mint, owner) => {
-  try {
-    console.log(mint, owner, "mint, owner");
-
-    // Get the address of pool wallet
-    // const [address] = PublicKey.findProgramAddressSync(
-    //     [new PublicKey(owner).toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), new PublicKey(mint).toBuffer()],
-    //     ASSOCIATED_TOKEN_PROGRAM_ID
-    // );
-    // console.log(address, 'address');
-
-    // Get the address of user wallet
-    const pubKey = await getAssociatedTokenAddress(
-      new PublicKey(mint),
-      new PublicKey(owner)
-    );
-    console.log(pubKey, "pubKey");
-
-    // Get the balance of user wallet
-    const { amount } = await getAccount(connection, pubKey);
-    console.log(amount, "amount");
-
-    return amount;
-  } catch (error) {
-    console.log(error);
-    return 0;
   }
 };
 
@@ -129,8 +94,6 @@ async function fetchTransaction(tx) {
       });
     }
 
-    console.log(balanceData, postBalances[0], preBalances[0]);
-
     // If First token change amount is minus, it is buy, otherwise it is sell
     const type =
       balanceData[0].postamount - balanceData[0].preamount > 0 ? "buy" : "sell";
@@ -159,24 +122,15 @@ async function fetchTransaction(tx) {
       price: price, // price swapped at
     };
 
-    console.log(saveData);
-
     await TrxEventDetails.create(saveData);
+    console.log("Saving transaction data to database...");
 
     // This is for get price after transaction finalized in pool
-    const baseData = await getPricePool(
-      balanceData[0].mint,
-      balanceData[0].owner
+    // Here, we can simply update Publickey
+    getQuote(
+      "BLLbAtSHFpgkSaUGmSQnjafnhebt8XPncaeYrpEgWoVk",
+      "So11111111111111111111111111111111111111112"
     );
-    // const quoteData = await getPricePool(quoteToken.mint, quoteToken.owner);
-
-    console.log(quoteData, baseData, "quoteData, baseData");
-
-    const newPrice = quoteData / baseData;
-
-    console.log(newPrice, "newPrice");
-
-    console.log("Saving transaction data to database...");
   } catch (err) {
     console.error(err, "fetchTransaction Error");
   }
@@ -227,8 +181,4 @@ async function main() {
   }, 3000);
 }
 
-getQuote(
-  "BLLbAtSHFpgkSaUGmSQnjafnhebt8XPncaeYrpEgWoVk",
-  "So11111111111111111111111111111111111111112"
-);
-// main();
+main();
