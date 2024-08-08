@@ -2,9 +2,9 @@ const mongoose = require('mongoose')
 
 mongoose.set('strictQuery', false);
 
-console.log('mongodb://127.0.0.1:27017/sol-trx', 'db')
+console.log(process.env.DB_CONNECTION, 'db')
 
-mongoose.connect('mongodb://127.0.0.1:27017/sol-trx', {
+mongoose.connect(process.env.DB_CONNECTION, {
     autoIndex: true,
     readPreference: 'primary',
     directConnection: true,
