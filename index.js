@@ -1,10 +1,13 @@
 require("dotenv").config();
+
+const cron = require("node-cron");
 const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
 const { getAccount, getMint } = require("@solana/spl-token");
 const { Program, AnchorProvider } = require("@coral-xyz/anchor");
 
 const { TrxEvents, TrxEventDetails } = require("./db/collection");
 const IDL = require("./lib/bio_swap.json");
+
 require("./db");
 
 const TOKEN_ADDRESS = new PublicKey(process.env.TOKEN_PAIR_ADDRESS);
@@ -121,29 +124,54 @@ async function fetchTransaction(tx) {
     await TrxEventDetails.create(saveData);
     console.log("Saved transaction detail to database...");
 
+    return true;
+
     // This is for get price after transaction finalized in pool
     // Here, we can simply update Publickey
     // getQuote(process.env.BASE_TOKEN_ADDRESS, process.env.QUOTE_TOKEN_ADDRESS);
   } catch (err) {
     console.error(err, "fetchTransaction Error");
+    return false;
+  }
+}
+
+// call fetchTransaction function to update transaction details
+async function updateTransactionDetails() {
+  const pendingTransactions = await TrxEvents.find({ status: false });
+  for (const item in pendingTransactions) {
+    const flag = await fetchTransaction(item.transactionHash);
+    if (flag) {
+      await TrxEvents.findOneAndUpdate({ _id: item._id }, { status: true });
+    }
   }
 }
 
 // Get the latest finalized transactions
-async function getRecentTransactions(routerAddress) {
+async function getRecentTransactions() {
   try {
-    const signatures = await connection.getConfirmedSignaturesForAddress2(
-      routerAddress,
-      { limit: 1 }
+    let requestConfig = {};
+    const lastTrx = await TrxEvents.findOne().sort({ createdAt: -1 });
+    if (lastTrx) {
+      requestConfig.until = lastTrx.transactionHash;
+    } else {
+      requestConfig.limit = 5;
+    }
+
+    const signatures = await connection.getSignaturesForAddress(
+      programId,
+      requestConfig
     );
 
-    for (let { signature } of signatures) {
+    console.log(signatures.length, 'signatures.length')
+
+    for (let i = signatures.length - 1; i >= 0; i--) {
+      const { signature } = signatures[i]
       console.log(signature);
       await TrxEvents.create({
         transactionHash: String(signature),
         rpc: process.env.RPC_URL,
+        status: false,
       });
-      fetchTransaction(signature);
     }
   } catch (err) {
     console.error(err, "getRecentTransactions Error");
@@ -166,14 +194,21 @@ function subscribeToTransactions() {
   );
 }
 
+
 async function main() {
   setTimeout(async () => {
     // First time, I tested with this transaction
     // await fetchTransaction(process.env.TEST_TRX_ID);
-    // At first time, we will have to test with recent transactions
-    // getRecentTransactions(programId);
+
     // When deploy, will enable subscribeToTransactions function to get transaction realtime log
-    subscribeToTransactions();
+    // subscribeToTransactions();
+
+    // In first part, We will get recent transactions from last signature
+    cron.schedule("* * * * *", () => {
+      console.log("running every one minute", new Date());
+      getRecentTransactions();
+      updateTransactionDetails();
+    });
   }, 3000);
 }
 

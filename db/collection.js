@@ -23,6 +23,7 @@ const TrxEventsSchema = new Schema(
   {
     transactionHash: String,
     rpc: String,
+    status: Boolean,
   },
   { timestamps: true }
 );
