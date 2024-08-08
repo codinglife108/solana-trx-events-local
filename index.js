@@ -68,7 +68,11 @@ async function fetchTransaction(tx) {
       maxSupportedTransactionVersion: 1,
     });
 
-    const { postTokenBalances, preTokenBalances } = transaction.meta;
+    const { postTokenBalances, preTokenBalances, status } = transaction.meta;
+
+    if (status.Err) {
+      return true;
+    }
 
     const balanceData = [];
 
@@ -138,10 +142,14 @@ async function fetchTransaction(tx) {
 // call fetchTransaction function to update transaction details
 async function updateTransactionDetails() {
   const pendingTransactions = await TrxEvents.find({ status: false });
-  for (const item in pendingTransactions) {
-    const flag = await fetchTransaction(item.transactionHash);
+  for (const i in pendingTransactions) {
+    console.log(pendingTransactions[i]);
+    const flag = await fetchTransaction(pendingTransactions[i].transactionHash);
     if (flag) {
-      await TrxEvents.findOneAndUpdate({ _id: item._id }, { status: true });
+      await TrxEvents.findOneAndUpdate(
+        { _id: pendingTransactions[i]._id },
+        { status: true }
+      );
     }
   }
 }
@@ -162,10 +170,10 @@ async function getRecentTransactions() {
       requestConfig
     );
 
-    console.log(signatures.length, 'signatures.length')
+    console.log(signatures.length, "signatures.length");
 
     for (let i = signatures.length - 1; i >= 0; i--) {
-      const { signature } = signatures[i]
+      const { signature } = signatures[i];
       console.log(signature);
       await TrxEvents.create({
         transactionHash: String(signature),
@@ -194,7 +202,6 @@ function subscribeToTransactions() {
   );
 }
 
-
 async function main() {
   setTimeout(async () => {
     // First time, I tested with this transaction
@@ -207,9 +214,9 @@ async function main() {
     cron.schedule("* * * * *", () => {
       console.log("running every one minute", new Date());
       getRecentTransactions();
-      updateTransactionDetails();
     });
   }, 3000);
 }
+updateTransactionDetails();
 
-main();
+// main();
