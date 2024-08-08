@@ -129,3 +129,4 @@ dist
 uploads/*
 .htaccess
 package-lock.json
+lib/bio_swap.json
