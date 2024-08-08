@@ -171,9 +171,9 @@ async function main() {
     // First time, I tested with this transaction
     // await fetchTransaction(process.env.TEST_TRX_ID);
     // At first time, we will have to test with recent transactions
-    getRecentTransactions(programId);
+    // getRecentTransactions(programId);
     // When deploy, will enable subscribeToTransactions function to get transaction realtime log
-    // subscribeToTransactions();
+    subscribeToTransactions();
   }, 3000);
 }
 
