@@ -9,8 +9,11 @@ require("./db");
 
 const TOKEN_ADDRESS = new PublicKey(process.env.TOKEN_PAIR_ADDRESS);
 const programId = new PublicKey(process.env.PROGRAMID);
-const connection = new Connection(process.env.RPC_URL);
-// const connection = new Connection(clusterApiUrl(process.env.RPC_URL), 'confirmed');
+const connection = new Connection(
+  process.env.RPC_URL == "mainnet-beta"
+    ? clusterApiUrl(process.env.RPC_URL)
+    : process.env.RPC_URL
+);
 
 const decimal = 1000000000; // 9 of 10
 
@@ -150,7 +153,7 @@ function subscribeToTransactions() {
     async (log) => {
       console.log("New transaction log:", log);
       await TrxEvents.create({
-        transactionHash: log.signature,
+        transactionHash: String(log.signature),
         rpc: process.env.RPC_URL,
       });
       fetchTransaction(log.signature);
