@@ -3,24 +3,22 @@ const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
 const { getAccount, getMint } = require("@solana/spl-token");
 const { Program, AnchorProvider } = require("@coral-xyz/anchor");
 
-const { TrxEventDetails } = require("./db/collection");
+const { TrxEvents, TrxEventDetails } = require("./db/collection");
 const IDL = require("./lib/bio_swap.json");
 require("./db");
 
-const TOKEN_ADDRESS = new PublicKey(
-  "GNH4UcmeGeRbi2p58WdQLoTkz5V18Rtna5kQVYdJZnDE"
-);
-const programId = new PublicKey("2yVbnztpQWDjwqcmSfs8cMgyoZSw67tZzFbSbwBytEhm");
-const connection = new Connection(clusterApiUrl("mainnet-beta"));
+const TOKEN_ADDRESS = new PublicKey(process.env.TOKEN_PAIR_ADDRESS);
+const programId = new PublicKey(process.env.PROGRAMID);
+const connection = new Connection(process.env.RPC_URL);
+// const connection = new Connection(clusterApiUrl(process.env.RPC_URL), 'confirmed');
 
 const decimal = 1000000000; // 9 of 10
 
 // Get Price in Pool after transaction is complete
 const getQuote = async (sourceMint, destinationMint) => {
   try {
-    const connection = new Connection(clusterApiUrl("mainnet-beta"));
     const provider = new AnchorProvider(connection, {
-      publicKey: new PublicKey("FUg6vdQyauSKCWffzyj8H1k8snSao4TC3oKqUFoRDZQE"),
+      publicKey: new PublicKey(process.env.RANDOM_WALLET_ADDRESS),
     });
     const program = new Program(IDL, programId, provider);
 
@@ -64,23 +62,18 @@ async function fetchTransaction(tx) {
       maxSupportedTransactionVersion: 1,
     });
 
-    const { postTokenBalances, preTokenBalances, postBalances, preBalances } =
-      transaction.meta;
+    const { postTokenBalances, preTokenBalances } = transaction.meta;
 
     const balanceData = [];
 
     for (let i = 0; i < postTokenBalances.length; i++) {
       if (
-        postTokenBalances[i].mint ==
-          "So11111111111111111111111111111111111111112" &&
+        postTokenBalances[i].mint == process.env.QUOTE_TOKEN_ADDRESS &&
         postTokenBalances[i].uiTokenAmount.amount == 0
       ) {
         continue;
       }
-      if (
-        postTokenBalances[i].mint ==
-        "CGKtv3vELziHAjrDj919yymXxyyhJury37TDQJHuXjSF"
-      ) {
+      if (postTokenBalances[i].mint == process.env.SPL_TOKEN_ADDRESS) {
         continue;
       }
       const matchedPre = preTokenBalances.find(
@@ -99,7 +92,7 @@ async function fetchTransaction(tx) {
       balanceData[0].postamount - balanceData[0].preamount > 0 ? "buy" : "sell";
 
     const quoteToken = balanceData.find(
-      (t) => t.mint == "So11111111111111111111111111111111111111112"
+      (t) => t.mint == process.env.QUOTE_TOKEN_ADDRESS
     );
     const baseAmount = Math.abs(
       balanceData[0].postamount - balanceData[0].preamount
@@ -123,14 +116,11 @@ async function fetchTransaction(tx) {
     };
 
     await TrxEventDetails.create(saveData);
-    console.log("Saving transaction data to database...");
+    console.log("Saved transaction detail to database...");
 
     // This is for get price after transaction finalized in pool
     // Here, we can simply update Publickey
-    getQuote(
-      "BLLbAtSHFpgkSaUGmSQnjafnhebt8XPncaeYrpEgWoVk",
-      "So11111111111111111111111111111111111111112"
-    );
+    // getQuote(process.env.BASE_TOKEN_ADDRESS, process.env.QUOTE_TOKEN_ADDRESS);
   } catch (err) {
     console.error(err, "fetchTransaction Error");
   }
@@ -139,15 +129,14 @@ async function fetchTransaction(tx) {
 // Get the latest finalized transactions
 async function getRecentTransactions(routerAddress) {
   try {
-    const routerPubkey = new PublicKey(routerAddress);
     const signatures = await connection.getConfirmedSignaturesForAddress2(
-      routerPubkey,
-      { limit: 2 }
+      routerAddress,
+      { limit: 1 }
     );
 
     for (let { signature } of signatures) {
       console.log(signature);
-      // fetchTransaction(signature);
+      fetchTransaction(signature);
     }
   } catch (err) {
     console.error(err, "getRecentTransactions Error");
@@ -157,9 +146,13 @@ async function getRecentTransactions(routerAddress) {
 // Webhook function to get realtime transactions
 function subscribeToTransactions() {
   connection.onLogs(
-    TOKEN_ADDRESS,
-    (log) => {
+    programId,
+    async (log) => {
       console.log("New transaction log:", log);
+      await TrxEvents.create({
+        transactionHash: log.signature,
+        rpc: process.env.RPC_URL,
+      });
       fetchTransaction(log.signature);
     },
     "finalized"
@@ -169,15 +162,11 @@ function subscribeToTransactions() {
 async function main() {
   setTimeout(async () => {
     // First time, I tested with this transaction
-    // await fetchTransaction(
-    //   "5YhEiWHARgyguJ9dSsdCUmQ4S6puuJS2UXGXQK2KQesjqPCwii7iffJBZLMjGfmrnWYfbNXb5dGDmfF7U1Mq99oy"
-    // );
+    // await fetchTransaction(process.env.TEST_TRX_ID);
     // At first time, we will have to test with recent transactions
-    // getRecentTransactions(TOKEN_ADDRESS);
+    getRecentTransactions(programId);
     // When deploy, will enable subscribeToTransactions function to get transaction realtime log
     // subscribeToTransactions();
-    // This is for get USDC price for each token
-    // getPrice()
   }, 3000);
 }
 

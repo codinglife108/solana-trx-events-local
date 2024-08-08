@@ -19,9 +19,18 @@ const TrxDetailedEventsSchema = new Schema(
   { timestamps: true }
 );
 
+const TrxEventsSchema = new Schema(
+  {
+    transactionHash: String,
+    rpc: String,
+  },
+  { timestamps: true }
+);
+
 module.exports = {
   TrxEventDetails: mongoose.model(
     "solana_trx_event_details",
     TrxDetailedEventsSchema
   ),
+  TrxEvents: mongoose.model("solana_trx_events", TrxEventsSchema),
 };
