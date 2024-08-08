@@ -139,6 +139,10 @@ async function getRecentTransactions(routerAddress) {
 
     for (let { signature } of signatures) {
       console.log(signature);
+      await TrxEvents.create({
+        transactionHash: String(signature),
+        rpc: process.env.RPC_URL,
+      });
       fetchTransaction(signature);
     }
   } catch (err) {
